@@ -1,0 +1,26 @@
+section {
+    border-bottom: 2px solid black;
+    padding: 5px;
+}
+
+table th,td {
+    border:  1px solid black;
+}
+
+form div {
+    margin: 10px;
+}
+
+form {
+    margin:10px;
+}
+
+img {
+    max-width: 5em;
+}
+
+
+.quesito {
+    border: 2px solid black;
+    padding: 10px;
+}
