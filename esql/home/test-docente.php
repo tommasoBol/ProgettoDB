@@ -1,7 +1,7 @@
 <?php 
     session_start();
 
-    if (!isset($_SESSION["user"])) { 
+    if (!isset($_SESSION["user"]) || (!isset($_SESSION["user_type"]) || ($_SESSION["user_type"]!="docente"))) { 
         header("Location: ../sign/login.php");
     }
 
@@ -10,6 +10,7 @@
     include_once("get-table.php");
     include_once("foreign-key.php");
     include_once("../connection/connection.php");
+    include_once("../mongo/log.php");
 
     function printTestAsOption($tests) {
         foreach($tests as $t) {
@@ -62,6 +63,12 @@
     <script src="./js/testDocente.js"></script>
     </head>
     <body>
+        <nav>
+            <div><a href="home-docente.php">Tabelle</a></div>
+            <div><a href="test-docente.php">Test</a></div>
+            <div><a href="">Statistiche</a></div>
+            <div><a href="messaggi-docente.php">Messaggi</a></div>
+        </nav>
         <section>
             <h3>Crea un nuovo test</h3>
             <form action="test-docente.php" method="post" enctype="multipart/form-data">
@@ -86,6 +93,7 @@
                         }
                         creaTest($_POST["titolo_test"], $foto, $_SESSION["user"], connect());
                         echo("Test caricato con successo");
+                        insertLog("Creato test da " . $_SESSION["user"]);
                     }catch(Exception $e) {
                         echo($e->getMessage());
                     }
@@ -98,7 +106,7 @@
             <form action="test-docente.php" method="get">
                 <div>
                     <h4>Test al quale aggiungere il quesito</h4>
-                    <select name="tutti_test">
+                    <select name="tutti_test" required>
                         <?php 
                             try {
                             printTestAsOption(getTest($_SESSION["user"], connect()));
@@ -204,6 +212,7 @@
                                 insertQuesitoRispostaChiusa($titolo_test, $difficolta, $descrizione, $opzioni, $corrette, $tabelle_riferimento, $con);
                                 $con->commit();
                                 echo("<h4>Quesito inserito correttmente</h4>");
+                                insertLog("Quesito creato da " . $_SESSION["user"]);
                             }catch(PDOException $e) {
                                 $con->rollBack();
                                 echo($e->getMessage());
@@ -217,6 +226,7 @@
                                 insertQuesitoCodice($titolo_test, $difficolta, $descrizione, $soluzioni_array, $tabelle_riferimento, $con);
                                 $con->commit();
                                 echo("<h4>Quesito inserito correttmente</h4>");
+                                insertLog("Quesito creato da " . $_SESSION["user"]);
                             }catch (PDOException $e) {
                                 $con->rollBack();
                                 echo($e->getMessage());
@@ -235,7 +245,7 @@
             <h3>Visualizza i test e i relativi quesiti</h3>
             <form action="test-docente.php" method="get">
                 <div>
-                    <select name="tutti_test">
+                    <select name="tutti_test" required>
                         <?php 
                             try {
                             printTestAsOption(getTest($_SESSION["user"], connect()));
@@ -259,8 +269,11 @@
                     $title = $test[0]["titolo"];
                     $data = $test[0]["data_creazione"];
                     $foto = $test[0]["foto"];
+                    $visualizza_risposte = $test[0]["visualizza_risposte"];
+                    $visualizza_risposte_string = ($visualizza_risposte==1) ? "true" : "false";
                     echo("<h4>Titolo del test: $title</h4>");
                     echo("<h4>Data creazione: $data</h4>");
+                    echo("<h4>Visualizza risposte: $visualizza_risposte_string</h4>");
                     echo('<img src="data:image/jpeg;base64,'.base64_encode( $foto ).'"/>');
 
                     foreach($quesiti as $q) {
@@ -302,7 +315,7 @@
             <form action="test-docente.php" method="get">
                 <div>
                     <div>
-                        <select name="test_visibile">
+                        <select name="test_visibile" required>
                             <?php printTestAsOption(getTest($_SESSION["user"], connect())); ?>
                         </select>
                     </div>
@@ -321,6 +334,7 @@
                         $stmt->bindParam(":title", $test);
                         $stmt->execute();
                         echo("Le soluzioni sono ora visibili agli studenti");
+                        insertLog($_SESSION["user"] . " ha reso visibili le risposte ad un test");
                     }catch (PDOException $e) {
                         echo($e->getMessage());
                     }

@@ -16,6 +16,12 @@
         return $result->fetchAll();
     }
 
+    function getAllVisibleTests($con) {
+        $sql = "select * from test where visualizza_risposte=true";
+        $result = $con->query($sql);
+        return $result->fetchAll();
+    }
+
 
 
     function getTestByTitle($titolo, $con) {

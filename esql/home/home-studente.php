@@ -1,13 +1,14 @@
 <?php
     session_start();
 
-    if (!isset($_SESSION["user"]) && !$_SESSION["user_type"]=="studente") { 
+    if (!isset($_SESSION["user"]) || (!isset($_SESSION["user_type"]) || ($_SESSION["user_type"]!="studente"))) { 
         header("Location: ../sign/login.php");
     }
 
     include_once("get-test.php");
     include_once("get-table.php");
     include_once("foreign-key.php");
+    include_once("../mongo/log.php");
     include_once("../connection/connection.php");
 
     function printTestAsOption($tests) {
@@ -217,6 +218,51 @@
     }
 
 
+    function getAllDocenti($con) {
+        $sql = "select email_utente from docente";
+        $result = $con->query($sql);
+        $result->setFetchMode(PDO::FETCH_ASSOC);
+        return $result->fetchAll();
+    }
+
+    function printDocentiAsOption($docenti) {
+        foreach($docenti as $d) {
+            $email = $d["email_utente"];
+            echo("<option value='$email'>$email</option>");
+        }
+    }
+
+
+    function printTestsAsOption($tests) {
+        foreach($tests as $t) {
+            $titolo = $t["titolo"];
+            echo("<option value='$titolo'>$titolo</option>");
+        }
+    }
+
+
+    function insertMessage($titolo, $mittente, $data, $testo, $test, $con) {
+        $sql = "insert into messaggio(titolo, testo, data_inserimento, titolo_test, utente_mittente) values(:title, :text, :date, :t_title, :mit)";
+        $stmt = $con->prepare($sql);
+        $stmt->bindParam(":title", $titolo);
+        $stmt->bindParam(":text", $testo);
+        $stmt->bindParam(":date", $data);
+        $stmt->bindParam(":t_title", $test);
+        $stmt->bindParam(":mit", $mittente);
+        $stmt->execute();
+        return $con->lastInsertId();
+    }
+
+
+    function insertDestinatario($id_messaggio, $docente_destinatario, $con) {
+        $sql = "insert into destinatario(id_messaggio, utente_destinatario) values(:id, :dest)";
+        $stmt = $con->prepare($sql);
+        $stmt->bindParam(":id", $id_messaggio);
+        $stmt->bindParam(":dest", $docente_destinatario);
+        $stmt->execute();
+    }
+
+
 ?>
 <!DOCTYPE html>
 <html>
@@ -224,11 +270,15 @@
         <link rel="stylesheet" type="text/css" href="../css/homedocente.css">
     </head>
     <body>
+        <nav>
+            <div><a href='home-studente.php'>Home</a></div>
+            <div><a href='statistiche.php'>Statistiche</a></div>
+        </nav>
         <section>
             <h3>Completa un test</h3>
             <form action="home-studente.php" method="get">
                 <div>
-                    <select name="tutti_test">
+                    <select name="tutti_test" required>
                         <?php 
                         $con = connect();
                         printTestAsOption(getAllTests($con)); 
@@ -310,22 +360,24 @@
                     if ($tipo_quesito=="codice") {
                         $testo = $_GET["risposta_chiusa"];
                         try {
-                            rispostaCodice($codice_studente, $testo, $num_quesito, $titolo_test, $con);
+                            rispostaCodice($codice_studente, $testo, $num_quesito, $titolo_test, $con); // inserisce la risposta nel DB
                             //calcolaEsitoRispostaCodice($codice_studente, $testo, $num_quesito, $titolo_test, $con);
                             echo("Risposta inserita");
+                            insertLog($_SESSION["user"] . " ha inserito una risposta di codice");
                         }catch(PDOException $e) {
                             echo($e->getMessage());
                         }
-                        $all_solutions = getSolutionsForQuesito($num_quesito, $titolo_test, $con);
+                        $all_solutions = getSolutionsForQuesito($num_quesito, $titolo_test, $con); // per ogni soluzione proposta, verifica se la risposta dello studente è valida
                         foreach ($all_solutions as $solution) {
                             $solution_query = $solution["testo"];
-                            try {
+                            try {  // esecuzione della risposta dello studente potrebbe lanciare un'eccezione PDO
                                 $risultato_soluzione = eseguiSoluzioneCodice($solution_query, $con);
                                 $risultato_risposta_studente = eseguiRispostaCodiceStudente($testo, $con);
                                 $flag = updateEsitoRisposta($codice_studente, $num_quesito, $titolo_test, $risultato_risposta_studente, $risultato_soluzione, $con);
-                                if ($flag) return;
+                                if ($flag) return; // se la risposta proposta dello studente coincide con la soluzione del docente, esci
                             } catch(PDOException $e) {
-                                $risultato_soluzione = eseguiSoluzioneCodice($solution_query, $con);
+                                // viene lanciata l'eccezione. Ricalcoliamo la soluzione del docente.
+                                $risultato_soluzione = eseguiSoluzioneCodice($solution_query, $con); 
                                 $flag = updateEsitoRisposta($codice_studente, $num_quesito, $titolo_test, [], $risultato_soluzione, $con);
                             }
                             
@@ -336,6 +388,7 @@
                                 $num_opzione = $_GET["scelta"];
                                 rispostaChiusa($codice_studente, $num_opzione, $num_quesito, $titolo_test, $con);
                                 echo("Risposta inserita");
+                                insertLog($_SESSION["user"] . " ha inserito una risposta ad un quesito a scelta multipla");
                             } else {
                                 echo("Inserisci la risposta");
                             }
@@ -353,8 +406,8 @@
             <div>
                 <form action="home-studente.php" method="get">
                     <div>
-                        <select name="test_visibili">
-                            <?php printTestAsOption(getAllTests($con)); ?>
+                        <select name="test_visibili" required>
+                            <?php printTestAsOption(getAllVisibleTests($con)); ?>
                         </select>
                     </div>
                     <div>
@@ -364,11 +417,17 @@
                 <?php 
                     if (isset($_GET["visualizza_risposte"])) {
                         $test_scelto = $_GET["test_visibili"];
+                        $test = getTestByTitle($test_scelto, $con);
+                        $foto = $test[0]["foto"];
+                        $docente = $test[0]["email_docente"];
                         $quesiti = getQuesiti($test_scelto, $con);
                         $opzioni = getOpzioniRispostaByTest($test_scelto, $con);
                         $soluzioni = getSoluzioniByTest($test_scelto, $con);
                         $codice_studente = getCodiceStudenteFromEmail($_SESSION["user"], $con)[0]["codice"];
-                        foreach($quesiti as $quesito) {
+                        echo("<h4>$test_scelto</h4>");
+                        echo("<h4>Creato da: $docente</h4>");
+                        echo('<img src="data:image/jpeg;base64,'.base64_encode( $foto ).'"/>');
+                        foreach($quesiti as $quesito) {  
                             echo("<div class='quesito'>");
                             echo("<div>");
                             $num_quesito = $quesito["numero"];
@@ -377,7 +436,7 @@
                             echo("</div>");
                             echo("<div>");
                             $risposta_chiusa_flag = false;
-                            foreach($opzioni as $o) {
+                            foreach($opzioni as $o) {    // se quesito_risposta_chiusa
                                 if ($o["numero_quesito"]==$quesito["numero"]) {
                                     $risposta_chiusa_flag = true;
                                     echo("<div>");
@@ -387,7 +446,7 @@
                                     echo("</div>");
                                 }
                             }
-                            foreach ($soluzioni as $s) {
+                            foreach ($soluzioni as $s) { // se quesito_codice
                                 if ($s["numero_quesito"]==$quesito["numero"]) {
                                     echo("<div>");
                                     echo("Soluzione " . $s["numero"] . ": ");
@@ -395,7 +454,7 @@
                                     echo("</div>");
                                     echo("<div>");
                                     echo("Risultato della soluzione");
-                                    $res = eseguiSoluzioneCodice($s["testo"], $con);
+                                    $res = eseguiSoluzioneCodice($s["testo"], $con);   // rendiamo visibile il risultato della query soluzione
                                     echo("<table>");
                                     foreach($res as $row) {
                                         echo("<tr>");
@@ -411,7 +470,7 @@
                             echo("</div>");
                             echo("<div>");
                             echo("<h4>Le tue risposte</h4>");
-                            if ($risposta_chiusa_flag) {
+                            if ($risposta_chiusa_flag) {    // se in precedenza abbiamo attraversato solo il risposta_chiusa loop
                                 $allAnswers = getRisposteChiuse($codice_studente, $test_scelto, $num_quesito, $con);
                                 foreach($allAnswers as $answer) {
                                     echo("<div>");
@@ -421,7 +480,7 @@
                                     echo($esito);
                                     echo("</div>");
                                 }
-                            } else {
+                            } else {  // se abbiamo attraversato risposta_codice loop
                                 $allAnswers = getRisposteCodice($codice_studente, $test_scelto, $num_quesito, $con);
                                 foreach($allAnswers as $answer) {
                                     echo("<div>");
@@ -430,7 +489,7 @@
                                     echo("</div>");
                                     echo("<div>");
                                     try {
-                                    $res = eseguiRispostaCodiceStudente($answer["testo"], $con); 
+                                    $res = eseguiRispostaCodiceStudente($answer["testo"], $con);   // rendiamo visibile il risultato della query risposta_codice
                                     if ($res) {
                                         echo("<table>");
                                         foreach($res as $row) {
@@ -441,7 +500,7 @@
                                             echo("</tr>");
                                         }
                                         echo("</table>");
-                                        $esito=($answer["esito"]) ? "Hai risposto correttamente" : "Hai risposto in maniera errata";
+                                        $esito=($answer["esito"]) ? "Hai risposto correttamente" : "Hai risposto in maniera errata"; 
                                         echo($esito);
                                     } else {
                                         echo("La query inserita non è valida");
@@ -455,6 +514,102 @@
                             echo("</div>");
                             echo("</div>");
                         }
+                    }
+                ?>
+            </div>
+        </section>
+        <section>
+            <h3>Scrivi un messaggio ad un docente</h3>
+            <div>
+                <form action="home-studente.php" method="get">
+                    <div>
+                        <select name="email_docente" required>
+                            <?php printDocentiAsOption(getAllDocenti($con)) ?>
+                        </select>
+                    </div>
+                    <div>
+                        <input type="submit" name="scegli_docente" value="Vai" />
+                    </div>
+                </form>
+            </div>
+            <div>
+                <form action="home-studente.php" method="get">
+                    <?php 
+                        if (isset($_GET["scegli_docente"])) {
+                            $_SESSION["docente_selezionato"] = $_GET["email_docente"];
+                            $tests = getTest($_SESSION["docente_selezionato"], $con);
+                            echo("<div>");
+                            echo("<select name='test_scelto' required>");
+                            printTestAsOption($tests);
+                            echo("</select>");
+                            echo("</div>");
+
+                            echo("<div>");
+                            echo("<label for='titolo_messaggio'>Titolo del messaggio</label>");
+                            echo("<input type='text' name='titolo_messaggio' required />");
+                            echo("</div>");
+
+                            echo("<div>");
+                            echo("<textarea name='testo_messaggio' required></textarea>");
+                            echo("</div>");
+
+                            echo("<div>");
+                            echo("<input type='submit' name='send_message' value='Invia messaggio' />");
+                            echo("</div>");
+                        }
+                    ?>
+                </form>
+            </div>
+            <div>   
+                <?php 
+                    if (isset($_GET["send_message"])) {
+                        try {
+                            $con->beginTransaction();
+                            $docente_destinatario = $_SESSION["docente_selezionato"];
+                            unset($_SESSION["docente_selezionato"]);
+                            $titolo = $_GET["titolo_messaggio"];
+                            $testo = $_GET["testo_messaggio"];
+                            $mittente = $_SESSION["user"];
+                            $test = $_GET["test_scelto"];
+                            $data = date("Y-m-d");
+                            $id_messaggio = insertMessage($titolo, $mittente, $data, $testo, $test, $con);
+                            insertDestinatario($id_messaggio, $docente_destinatario, $con);
+                            $con->commit();
+                            echo("Messaggio inviato");
+                            insertLog("Messaggio inviato da " . $_SESSION["user"] . " a " . $docente_destinatario);
+                        } catch(PDOException $e) {
+                            $con->rollBack();
+                            echo("Errore nell'invio del messaggio");
+                        }
+
+                    }
+                ?>
+            </div>
+        </section>
+        <section>
+            <h3>Visualizza messaggi ricevuti</h3>
+            <div>
+                <?php 
+                    try {
+                        $email = $_SESSION["user"];
+                        $sql = "call get_messaggi_from_destinatario('$email')";
+                        $result = $con->query($sql);
+                        $result->setFetchMode(PDO::FETCH_ASSOC);
+                        foreach($result->fetchAll() as $m) {
+                            echo("<div style='border:1px solid black;'>");
+                            echo("Titolo messaggio: " . $m["titolo"]);
+                            echo("<br>");
+                            echo("Mittente: " . $m["utente_mittente"]);
+                            echo("<br>");
+                            echo("Inviato in data: " . $m["data_inserimento"]);
+                            echo("<br>");
+                            echo("In riferimento al test: " . $m["titolo_test"]);
+                            echo("<br>");
+                            echo("Corpo del messaggio: " . $m["testo"]);
+                            echo("</div>");
+                        }
+                    }catch(PDOException $e) {
+                        echo($e->getMessage());
                     }
                 ?>
             </div>

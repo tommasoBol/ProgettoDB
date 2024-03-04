@@ -1,5 +1,7 @@
 <?php
 
+	include_once("../mongo/log.php");
+
     function registraDocente() {
 		try {
 			include("../connection/connection.php");
@@ -58,7 +60,8 @@
 			$stmt->execute();
 
 			echo ("<h2>Registrazione avvenuta con successo</h2>");
-			echo ("<a href='signinPage.php'>Vai alla pagina di login</a>");
+			echo ("<a href='login.php'>Vai alla pagina di login</a>");
+			insertLog("Nuovo utente inserito");
 
 			$con->commit();
 		}catch (PDOException $e) {
@@ -138,9 +141,12 @@
 			$stmt->execute();
 
 			echo ("<h2>Registrazione avvenuta con successo</h2><br>");
-			echo ("<a href='signupPage.php'>Vai alla pagina di login</a>");
+			echo ("<a href='login.php'>Vai alla pagina di login</a>");
+			
 
             $con->commit();
+
+			insertLog("Nuovo utente inserito");
 
 
 		}catch (PDOException $e) {
@@ -159,7 +165,7 @@
 	}
 
 	function validaTelefono($telefono) {
-		return (strlen($telefono)==10 && !ctype_digit($telefono));
+		return (strlen($telefono)==10 && ctype_digit($telefono));
 	}
 
 	function validaCodiceStudente($codice) {
@@ -167,7 +173,7 @@
 	}
 
 	function validaAnnoImmatricolazione($anno) {
-		return filter_var($anno, FILTER_VALIDATE_INT, array("options" => array("min_range"=>2000, "max_range"=>2023)));
+		return filter_var($anno, FILTER_VALIDATE_INT, array("options" => array("min_range"=>1980, "max_range"=>2024)));
 	}
 
 

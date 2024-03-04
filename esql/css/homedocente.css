@@ -24,3 +24,15 @@ img {
     border: 2px solid black;
     padding: 10px;
 }
+
+nav {
+    display: flex;
+}
+
+nav div {
+    flex-grow: 1;
+    border: 1px solid black;
+    padding: 10px;
+    justify-content: center;
+    align-items: center;
+}

@@ -192,16 +192,35 @@ create table risposta_codice (
 
 );
 
+create table messaggio (
+	
+    id int auto_increment,
+    titolo varchar(50),
+    testo varchar(1000),
+    data_inserimento date,
+    titolo_test varchar(50),
+    utente_mittente varchar(100),
+    primary key(id),
+    foreign key (titolo_test) references test(titolo),
+    foreign key(utente_mittente) references utente(email)
+
+);
+
+
+create table destinatario (
+
+	id_messaggio int,
+    utente_destinatario varchar(100),
+    primary key(id_messaggio, utente_destinatario),
+    foreign key(id_messaggio) references messaggio(id),
+    foreign key(utente_destinatario) references utente(email)
+
+);
+	
 
 
 
-insert into utente(email, pass, nome, cognome) values("tommasocompagnucci1@gmail.com", "password", "tommaso", "compagnucci");
-insert into utente(email, pass, nome, cognome, telefono) values("monica@gmail.com", "password", "monica", "arcuri", "3285361205");
-
-insert into studente(email_utente, codice, anno_immatricolazione) values("tommasocompagnucci1@gmail.com", "1234567891234567", 2019);
-insert into docente(email_utente, dipartimento, corso) values ("monica@gmail.com", "Medicina e chirurgia", "Istologia");
-
-
+/* 	LOGIN E REGISTRAZIONE  */
 
 DELIMITER $
 create procedure inserimento_utente(in new_email varchar(100), in pw varchar(30), in new_name varchar(30), in new_surname varchar(50), in new_cell char(10))
@@ -245,6 +264,12 @@ create procedure login_studente(in new_email varchar(100), in pw varchar(30))
         where email_utente = new_email AND pass=pw;
     end $
 DELIMITER ;
+
+
+
+
+/*	TABELLE	*/
+
 
 DELIMITER $
 create procedure get_table_from_docente(in email varchar(100))
@@ -292,6 +317,11 @@ create procedure get_foreign_keys_for_attribute(in anome varchar(30), in tnome v
     end $
 DELIMITER ;
 
+
+
+/*	QUESITI	*/
+
+
 DELIMITER $
 create procedure create_quesito(in numero_q int, in titolo_t varchar(50), in dif varchar(20), in descriz varchar(200)) 
 	begin
@@ -317,6 +347,25 @@ create procedure create_quesito_codice(in numero_q int, in titolo_t varchar(50),
     end $
 DELIMITER ;
 
+
+
+/*	MESSAGGI	*/
+
+DELIMITER $
+create procedure get_messaggi_from_destinatario(in email_destinatario varchar(100))
+	begin
+		select * 
+        from messaggio join destinatario on messaggio.id=destinatario.id_messaggio
+        where destinatario.utente_destinatario = email_destinatario;
+    end $
+DELIMITER ;
+
+
+
+
+
+
+
 DELIMITER $
 create trigger after_insert_risposta_codice
 after insert on risposta_codice
@@ -332,7 +381,7 @@ for each row
             set data_ultima_risposta = CURDATE()
             where codice_studente = NEW.codice_studente and titolo_test = NEW.titolo_test_quesito;
 		else
-			insert into completamento(codice_studente, titolo_test, data_prima_risposta, stato) values(NEW.codice_studente, NEW.titolo_test_quesito, CURDATE(), "InCompletamento");
+			insert into completamento(codice_studente, titolo_test, data_prima_risposta, data_ultima_risposta, stato) values(NEW.codice_studente, NEW.titolo_test_quesito, CURDATE(), CURDATE(),  "InCompletamento");
         end if;
         
         set numero_quesiti_per_test = (select count(*) from quesito where titolo_test=NEW.titolo_test_quesito);
@@ -366,7 +415,7 @@ for each row
             set data_ultima_risposta = CURDATE()
             where codice_studente = NEW.codice_studente and titolo_test = NEW.titolo_test_quesito;
 		else
-			insert into completamento(codice_studente, titolo_test, data_prima_risposta, stato) values(NEW.codice_studente, NEW.titolo_test_quesito, CURDATE(), "InCompletamento");
+			insert into completamento(codice_studente, titolo_test, data_prima_risposta, data_ultima_risposta,  stato) values(NEW.codice_studente, NEW.titolo_test_quesito, CURDATE(), CURDATE(), "InCompletamento");
         end if;
         
         set numero_quesiti_per_test = (select count(*) from quesito where titolo_test=NEW.titolo_test_quesito);
@@ -394,6 +443,7 @@ for each row
 		set flag_esito = (select count(*) from opzione_risposta where numero=NEW.numero_opzione and numero_quesito=NEW.numero_quesito and titolo_test_quesito=NEW.titolo_test_quesito and is_correct=true);
         if flag_esito>0 then
             set NEW.esito = true;
+		else set NEW.esito = false;
         end if;
     end $
 DELIMITER ;
@@ -417,13 +467,8 @@ DELIMITER ;
 
 
 
-select count(distinct numero_quesito, titolo_test_quesito) from risposta_chiusa where codice_studente = "1234567891234567" and titolo_test_quesito="Esercitazione1";
-select count(distinct numero_quesito, titolo_test_quesito) from risposta_codice where codice_studente = "1234567891234567" and titolo_test_quesito="Esercitazione1";
 
-select distinct numero_quesito, titolo_test_quesito from risposta_chiusa where codice_studente = "1234567891234567" and titolo_test_quesito="Esercitazione1";
-select distinct numero_quesito, titolo_test_quesito from risposta_codice where codice_studente = "1234567891234567" and titolo_test_quesito="Esercitazione1";
-
-
+create view statistica1 as
 select codice_studente, count(*) as conteggio
 from completamento
 where stato="Concluso"
@@ -431,7 +476,7 @@ group by codice_studente
 order by conteggio;
 
 
-
+create view statistica2 as
 with risposte_chiuse_inserite as
 (select codice, count(codice_studente) as totale
 from studente left join risposta_chiusa on studente.codice=risposta_chiusa.codice_studente
@@ -448,17 +493,18 @@ risposte_codice_corrette as
 (select codice, count(codice_studente) as totale
 from studente left join risposta_codice on studente.codice=risposta_codice.codice_studente and esito=true
 group by codice)
-select studente.codice, ((risposte_chiuse_corrette.totale+risposte_codice_corrette.totale)/(risposte_chiuse_inserite.totale+risposte_codice_inserite.totale)) as punteggio
-from studente join risposte_chiuse_corrette on studente.codice=risposte_chiuse_corrette.codice
-				join risposte_codice_corrette on studente.codice=risposte_codice_corrette.codice
-                join risposte_chiuse_inserite on studente.codice=risposte_chiuse_inserite.codice
-                join risposte_codice_inserite on studente.codice=risposte_codice_inserite.codice
-group by studente.codice
-order by punteggio;
+select risposte_chiuse_inserite.codice, ((risposte_chiuse_corrette.totale+risposte_codice_corrette.totale)/(risposte_chiuse_inserite.totale+risposte_codice_inserite.totale)) as punteggio
+from risposte_chiuse_inserite join risposte_chiuse_corrette on risposte_chiuse_inserite.codice = risposte_chiuse_corrette.codice
+								join risposte_codice_inserite on risposte_chiuse_inserite.codice=risposte_codice_inserite.codice
+                                join risposte_codice_corrette on risposte_chiuse_inserite.codice=risposte_codice_corrette.codice
+group by risposte_chiuse_inserite.codice
+order by punteggio desc;
 
 
-
-
+create view statistica3 as
+select *
+from quesito
+order by num_risposte desc;
 
 
 

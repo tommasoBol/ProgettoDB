@@ -1,7 +1,7 @@
 <?php
     session_start();
 
-    if (!isset($_SESSION["user"]) && $_SESSION["user_type"]=="docente") { 
+    if (!isset($_SESSION["user"]) || (!isset($_SESSION["user_type"]) || ($_SESSION["user_type"]!="docente"))) { 
         header("Location: ../sign/login.php");
     }
 
@@ -10,6 +10,7 @@
     include_once("create-table.php");
     include_once("foreign-key.php");
     include_once("insert-data.php");
+    include_once("../mongo/log.php");
     
 
     function createTable() {
@@ -182,6 +183,12 @@
         <script src="./js/homeDocente.js"></script>
     </head>
     <body>
+        <nav>
+            <div><a href="home-docente.php">Tabelle</a></div>
+            <div><a href="test-docente.php">Test</a></div>
+            <div><a href="statistiche.php">Statistiche</a></div>
+            <div><a href="messaggi-docente.php">Messaggi</a></div>
+        </nav>
         <section>
             <h3>Crea una tabella</h3>
             <form action="home-docente.php" method="get">
@@ -237,7 +244,12 @@
                 <h4>
                     <?php
                         if (isset($_GET["create_table"])) {
+                            try {
                             createTable();
+                            insertLog("Creata tabella " .  $_GET['table_name'] . " da " . $_SESSION["user"]);
+                            }catch(PDOException $e) {
+                                echo($e->getMessage());
+                            }
                         }
                     ?>
                 </h4>
@@ -255,14 +267,14 @@
                         </tr>
                         <tr>
                             <td>
-                                <select name="tabella_referenziante">
+                                <select name="tabella_referenziante" required>
                                     <?php 
                                     $tabelle_docente = getTableFromDocente($_SESSION["user"], connect());
                                     printTableFromDocenteAsOption($tabelle_docente); ?>
                                 </select>
                             </td>
                             <td>
-                                <select name="tabella_referenziata">
+                                <select name="tabella_referenziata" required>
                                     <?php printTableFromDocenteAsOption($tabelle_docente); ?>
                                 </select>
                             </td>
@@ -290,6 +302,7 @@
                         insertForeignKey($_GET["referenziante"], $_GET["referenziato"], $_SESSION["tabella_referenziante"], $_SESSION["tabella_referenziata"], connect());
                         unset($_SESSION["tabella_referenziante"]);
                         unset($_SESSION["tabella_referenziata"]);
+                        insertLog("Creato vincolo di integrità referenziale da " . $_SESSION["user"]);
                     } catch(PDOException $e) {
                         echo($e->getMessage());
                     }
@@ -301,7 +314,7 @@
         <section>
             <h3>Visualizza la struttura delle tabelle</h3>
             <form action="home-docente.php" method="get">
-                <select name="struttura_tabelle">
+                <select name="struttura_tabelle" required>
                     <?php printTableFromDocenteAsOption($tabelle_docente); ?>
                 </select>
                 <input type="submit" name="get_struttura_tabelle" value="Cerca" required />
@@ -321,7 +334,7 @@
         <section>
             <h3>Inserisci righe nelle tabelle create</h3>
             <form action="home-docente.php" method="get">
-                <select name="tab_doc">
+                <select name="tab_doc" required>
                     <?php printTableFromDocenteAsOption($tabelle_docente); ?>
                 </select>
                 <input type="submit" name="inserisci_righe" value="Vai" />
@@ -342,6 +355,7 @@
                         $con = connect();
                         $attributes = getTableAttributes($_SESSION["tab_doc"], $con);
                         insertData($_SESSION["tab_doc"], $attributes, $_GET, $con);
+                        insertLog("Inserita riga nella tabella " . $_SESSION["tab_doc"] . " da parte del docente " . $_SESSION["user"]);
                         echo("Inserimento avvenuto");
                     }catch(Exception $e) {
                         echo($e->getMessage());
@@ -353,7 +367,7 @@
         <section>
             <h3>Visualizza il contenuto delle tabelle</h3>
             <form action="home-docente.php" method="get">
-                <select name="contenuto_tabelle">
+                <select name="contenuto_tabelle" required>
                     <?php printTableFromDocenteAsOption($tabelle_docente); ?>
                 </select>
                 <input type="submit" name="table_data" value="Vai"/>
